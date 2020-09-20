@@ -1,0 +1,57 @@
+---
+title: "Sampling and Estimation | Nonresponse Assignment"
+author: "Marco Ramljak"
+output:  
+  html_document:
+    code_folding: show
+    theme: lumen 
+    toc: true  
+    toc_float: true
+    number_sections: true
+
+---
+
+```{r}
+library(tidyverse)
+library(haven)
+library(sjmisc)
+
+dat <- read_spss("Sampling and Estimation/EMOS - Sampling and Estimation -exercises Nonresponse/gps.sav")
+```
+
+# Assignment 1 
+```{r}
+frq(dat$Result) # the response rate in the survey based on the variable Result is 58.69 % (cat 1 Response)
+
+frq(dat$HasPC)
+frq(dat$OwnHouse)
+
+con_int <- function(x, y, z) {
+  cat <- x %>% 
+    filter((!!as.name(y)) == z) %>% 
+    select(y) %>% 
+    deframe()
+  n <- x %>%
+    filter(!is.na((!!as.name(y)))) %>%
+    select(y) %>%
+    deframe()
+  p <- length(cat) / length(n)
+
+  std.error <- sqrt((p * (1 - p)) / length(n))
+
+  upper <- p + 1.96 * std.error
+  lower <- p - 1.96 * std.error
+  return(
+    c("Lower" = lower, "Upper" = upper))
+}
+
+con_int(x = dat, y = "HasPC", z = 1)
+con_int(x = dat, y = "OwnHouse", z = 1)
+
+
+```
+
+```{r}
+
+```
+
