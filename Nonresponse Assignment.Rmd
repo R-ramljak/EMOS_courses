@@ -7,33 +7,39 @@ output:
     theme: lumen 
     toc: true  
     toc_float: true
-    number_sections: true
 
 ---
 
-```{r}
+These assignments are based on for the Non-response course within the EMOS module. The following solution methods and interpretations are based on the slides by Barry Schouten and the Chapter 38 - Nonresponse error: detection and correction in the Handbook of Survey Methodology, also based on Barry Schouten and Jelke Bethlehem.
+```{r message=FALSE}
 library(tidyverse)
 library(haven)
 library(sjmisc)
+library(broom)
+library(knitr)
+library(kableExtra)
 
 dat <- read_spss("Sampling and Estimation/EMOS - Sampling and Estimation -exercises Nonresponse/gps.sav")
 ```
 
-# Assignment 1 
+# Assignment 1: Response rate and target variables
 ```{r}
 frq(dat$Result) # the response rate in the survey based on the variable Result is 58.69 % (cat 1 Response)
 
-frq(dat$HasPC)
-frq(dat$OwnHouse)
+frq(dat$HasPC) # of the 18792 people with valid responses, 57.38% own a PC
+frq(dat$OwnHouse) # of the 18792 people with valid responses, 62.52% own a house
 
+
+# custom function that calculates the 95% confidence interval for proportions
 con_int <- function(x, y, z) {
-  cat <- x %>% 
+  object <- x %>% 
     filter((!!as.name(y)) == z) %>% 
-    select(y) %>% 
+    select(all_of(y))
+  cat <- object %>% 
     deframe()
   n <- x %>%
     filter(!is.na((!!as.name(y)))) %>%
-    select(y) %>%
+    select(all_of(y)) %>%
     deframe()
   p <- length(cat) / length(n)
 
@@ -42,16 +48,131 @@ con_int <- function(x, y, z) {
   upper <- p + 1.96 * std.error
   lower <- p - 1.96 * std.error
   return(
-    c("Lower" = lower, "Upper" = upper))
+    c("Variable" = names(object), "Lower bound" = round(lower, 4) * 100, 
+      "Upper bound" = round(upper, 4) * 100))
 }
 
 con_int(x = dat, y = "HasPC", z = 1)
 con_int(x = dat, y = "OwnHouse", z = 1)
 
+```
+In order to calculate the worst case lower and upper limits of the sample percentages concerning the two variable one needs to add the respective non-response percentage to each the Yes and No percentages. This is possible with the values from the raw percentages above (column 4):
+
+| Variable      | Yes           | No    |
+| ------------- |:-------------:| -----:|
+| HasPC Upper   | 72.98         | 25.02 |
+| HasPC Lower   | 33.67         | 46.33 |
+| OwnHouse Upper| 78.00         | 22.00 |
+| OwnHouse Lower| 36.69         | 63.31 |
+
+
+# Assignment 2: Exploring the nonresponse
+```{r}
+# helper to include auxiliary variables
+not.aux <- c("HasPC", "OwnHouse", "Employed", "Respons1", "Response", "Contact", "Able")
+dat.new <- dat %>% 
+  select(-all_of(not.aux)) %>% 
+  mutate(Result.dummy = case_when(Result == 1 ~ "Responded", # define if people responded or not
+                                  TRUE ~ "Missing"))
+
+# execute chi square tests for all mentioned variables, save the statistic-value and calculate cramers V to differntiate between the variables.
+chi.result <- dat.new %>% 
+  map(~chisq.test(., dat.new$Result.dummy)) %>% 
+  map_df(glance, .id = "variables") %>% 
+  mutate(cramersV = sqrt(statistic / 32019))
+
+chi.result %>% 
+  filter(!variables %in% c("Result", "Result.dummy")) %>% 
+  ggplot() +
+  geom_bar(aes(x = reorder(variables, cramersV), y = cramersV), stat = "identity") +
+  coord_flip()
 
 ```
+
+All variables in 2a had a significant p-value which emphasizes the importance of all auxiliary variables in the context of non-response bias. This means that the respondents differ in auxiliary variable charactersitics significantly from non-respondents (Contingency tables are not represented due to space issues). However, no ranking (strongest candidates) should be applied only based on p-values, therefore the CramersV statistic is calculated.     
+The graph presents the variables in descending order based on the CramersV value, i.e. the strength of their association with the response indicator. `Region`, `Urban` and `Phone` have the highest values, meaning a high dispersion of respondents and non-respondents within these variables, while there is almost no non-response bias in the context of `gender`.     
+
+
+# Assignment 4: Exploring representativity
+```{r}
+# Modelling the composition of non-response by means of a logistic regression model
+# Original response
+mod.4a <- glm(Response ~ Region + Urban + Phone + HouseVal + Ethnic +  
+                HHType, family = "binomial", data = dat)
+resp.prop <- mod.4a %>% 
+  augment(type.predict = "response")
+
+# R-indicator
+(R.ind.1 <- 1 - 2 * sd(resp.prop$.fitted)) 
+# Coefficient of Variation
+(CV.1 <- (1 - R.ind.1) / 2 * mean(resp.prop$.fitted))
+
+
+# Response propensities after one month
+mod.4b <- glm(Respons1 ~ Region + Urban + Phone + HouseVal + Ethnic +  
+                HHType, family = "binomial", data = dat)
+resp.prop <- mod.4b %>% 
+  augment(type.predict = "response")
+
+# R-indicator
+(R.ind.2 <- 1 - 2 * sd(resp.prop$.fitted)) 
+# Coefficient of Variation
+(CV.2 <- (1 - R.ind.2) / 2 * mean(resp.prop$.fitted))
+```
+The Propensity score is the conditional probability that a person with characteristics X responds in the survey. The R-indicator and the CV are standardized measures that make it easy to compare non-response error between surveys. The R-indicator for X is defined as the standard deviation of the response propensities and transformed to be between 0 and 1. 1 indicating that the response is fully representative because all proposenties are equal, and 0 indicating the largest possible deviation from a representative response. The R-indicator for the first model is around 0.8 and for the second model 0.84, meaning that the general representativity is at a high level and that it even improved based on the response after one month.     
+The CV represents the response propensities and their maximal standardized bias for all variables that are linear combinations of the components of X. It therefore represents an upper bound of the possible non-response bias, for the auxiliary variables within X. In this case the CV decreases with the survey in time (0.06 --> 0.04), which also leads to the conclusion the non-response bias with respect to X is at a low level and decreased after one month. 
+
+# Assignment 5: Nonresponse adjustment using propensity weighting
+```{r}
+# inverse propensity weighting weight
+dat.red <- dat %>% 
+  select(HasPC, OwnHouse)
+
+resp.prop.5a <- resp.prop %>% 
+  bind_cols(dat.red) %>% # bind the target variables to the object with the predicted values
+  mutate(inv.prop.weight = 1 / .fitted)
+
+frq(resp.prop.5a$HasPC, weights = resp.prop.new$inv.prop.weight) # adjustment by 1.03 per cent in favor of owning a PC
+frq(resp.prop.5a$OwnHouse, weights = resp.prop.new$inv.prop.weight) # adjustment by 2.96 per cent in favor of owning a house
+```
+For 5a the inverse propensity weights are calculated and with these new weights one can compute new estimates for the target variables. As one can see the proportions are adjusted now by 1.03% in favor or owning a PC and by 2.96% in favor of owning a house.
 
 ```{r}
+# Propensity class weighting with poststratification
+resp.prop.5b <- resp.prop.5a %>% 
+  mutate(strata.weight.5 = cut(.fitted, 5),
+         strata.weight.20 = cut(.fitted, 20))
+
+# Visualising the response probability bins (inv.propensity weight)
+resp.prop.5b %>% 
+  ggplot() +
+  geom_jitter(aes(x = .fitted, y = strata.weight.5))
+
+resp.prop.5b %>% 
+  ggplot() +
+  geom_jitter(aes(x = .fitted, y  = strata.weight.20))
+  
+# Poststratified estimator for 5 strata
+(est.strat.class.5 <- resp.prop.5b %>% 
+  group_by(strata.weight.5) %>% 
+  summarise(w.str = mean(inv.prop.weight),
+            n.str = n(),
+            HasPC.prop = sum(HasPC / n(), na.rm = T),
+            OwnHouse.prop = sum(OwnHouse / n(), na.rm = T)) %>% 
+  summarise(HasPC.prop = sum(HasPC.prop * w.str) / sum(w.str) * 100,
+            OwnHouse.prop = sum(OwnHouse.prop * w.str) / sum(w.str) * 100))
+
+# Poststratified estimator for 20 strata
+(est.strat.class.20 <- resp.prop.5b %>% 
+  group_by(strata.weight.20) %>% 
+  summarise(w.str = mean(inv.prop.weight),
+            n.str = n(),
+            HasPC.prop = sum(HasPC / n(), na.rm = T),
+            OwnHouse.prop = sum(OwnHouse / n(), na.rm = T)) %>% 
+  summarise(HasPC.prop = sum(HasPC.prop * w.str) / sum(w.str) * 100,
+            OwnHouse.prop = sum(OwnHouse.prop * w.str) / sum(w.str) * 100))
 
 ```
 
+For 5b propensity class weighting with post-stratification is applied. The idea is to form strata based on similar or even equal inclusion probabilites. The inclusion probabilites are modeled and are represented by the inverse propensity weights from 5a. Then a weighted stratified population estimate can be computed based on the strata defined. Two options are presented, one option models the estimate based on 5 strata and one based on 20 strata. The two plots show the bins and ranges of these strata for each option, the points represent each observation within each strata (jitter function applied).       
+Mention adjustments!!!
