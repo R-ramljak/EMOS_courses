@@ -29,10 +29,10 @@ df <- data.frame(
            "sum(incl.prob) == 1",
            "turnover > 0",
            "total.rev > 0",
-           "turnover + other.rv == total.rev",
-           "turnover < total.rev",
-           "other.rev < total.rev",
-           "staff.costs < total.costs",
+           "turnover + other.rev == total.rev",
+           "turnover <= total.rev",
+           "other.rv <= total.rev",
+           "staff.costs <= total.costs",
            "total.rev - total.costs == profit")
   , label = c("All unique rows",
               "Incl.prob valid",
@@ -54,18 +54,23 @@ SBS2000 %>%
 SBS2000 %>% 
   confront(v) %>% 
   barplot()
+
+plot(v)
 ```
 # Number 6
-
+turnover >= 0 
+other.rev >= 0 
+turnover + other.rev == total.rev
+--> total rev is also non negative 
 
 # Number 7
 Ranges for age[18, inf]
 Ranges for income[0, inf]
 ```{r}
 rule7 <- validator(age >= 18, 
-                    if (job == TRUE) age <= 70,
-                    if (income > 0) job == TRUE,
-                    income >= 0)
+                   if (job == TRUE) age <= 70,
+                   if (income > 0) job == TRUE,
+                   income >= 0)
 detect_boundary_num(rule7)
 ```
 
