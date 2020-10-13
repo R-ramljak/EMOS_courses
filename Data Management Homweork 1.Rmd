@@ -1,0 +1,84 @@
+---
+title: "Data management | Homework"
+author: "Marco Ramljak"
+output:
+  word_document:
+    toc: yes
+  html_document:
+    code_folding: show
+    theme: lumen
+    toc: yes
+    toc_float: yes
+  pdf_document:
+    toc: yes
+---
+
+```{r}
+library(tidyverse)
+library(validate)
+library(validatetools)
+data(SBS2000)
+```
+
+# Number 5
+```{r}
+# rules
+df <- data.frame(
+  rule = c("n_distinct(id) == length(id)",
+           "incl.prob > 0",
+           "sum(incl.prob) == 1",
+           "turnover > 0",
+           "total.rev > 0",
+           "turnover + other.rv == total.rev",
+           "turnover < total.rev",
+           "other.rev < total.rev",
+           "staff.costs < total.costs",
+           "total.rev - total.costs == profit")
+  , label = c("All unique rows",
+              "Incl.prob valid",
+              "Incl.prob add up to 1",
+              "turnover valid",
+              "total.rev valid",
+              "total.rev decompose",
+              "size turnover and total.rev",
+              "size other.rev and total.rev",
+              "size staff.costs and total.costs",
+              "profit decompose")
+)
+v <- validator(.data=df)
+
+SBS2000 %>% 
+  confront(v) %>% 
+  summary()
+
+SBS2000 %>% 
+  confront(v) %>% 
+  barplot()
+```
+# Number 6
+
+
+# Number 7
+Ranges for age[18, inf]
+Ranges for income[0, inf]
+```{r}
+rule7 <- validator(age >= 18, 
+                    if (job == TRUE) age <= 70,
+                    if (income > 0) job == TRUE,
+                    income >= 0)
+detect_boundary_num(rule7)
+```
+
+# Number 8
+```{r}
+rule8 <- validator(if (income > 0) age >= 16,
+                   age < 12)
+simplify_conditional(rule8)
+```
+# Number 9
+```{r}
+rule9 <- validator(age >= 18,
+                   age >= 12)
+remove_redundancy(rule9)
+```
+
